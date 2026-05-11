@@ -138,7 +138,13 @@ app.get("/sse", async (req, res) => {
   console.log("✅ Nové GET připojení k SSE");
   try {
     const server = createNewMcpServer();
-    const transport = new SSEServerTransport("/message", res);
+    
+    // 👑 OPRAVA: Zjistíme tvoji přesnou Railway doménu a vytvoříme ABSOLUTNÍ URL adresu
+    const fullMessageUrl = `https://${req.get("host")}/message`;
+    
+    // Nyní už TypingMind přesně ví, kam má příkazy posílat
+    const transport = new SSEServerTransport(fullMessageUrl, res);
+    
     await server.connect(transport);
     transports.set(transport.sessionId, transport);
     
@@ -146,6 +152,7 @@ app.get("/sse", async (req, res) => {
       transports.delete(transport.sessionId);
     });
   } catch (err) {
+    console.error("Chyba inicializace SSE:", err);
     res.status(500).send("Chyba inicializace SSE");
   }
 });
