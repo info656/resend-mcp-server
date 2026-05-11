@@ -2,17 +2,15 @@
 
 /**
  * Resend MCP Server
- * 
+ *
  * Full MCP server for Resend API
  * Supports: Emails, Templates, Broadcasts, Contacts, Segments, Domains, Logs
- * 
- * Usage:
- *   export RESEND_API_KEY=re_xxx
- *   node resend-mcp-server.js
- * 
- * Or in TypingMind MCP config:
- *   Command: node /path/to/resend-mcp-server.js
- *   Env: RESEND_API_KEY=re_xxx
+ *
+ * TWO MODES:
+ * 1. LOCAL: node resend-mcp-server.js           → stdio (for local TypingMind MCP)
+ * 2. CLOUD: PORT=3000 node resend-mcp-server.js → SSE HTTP server (for URL connection)
+ *
+ * Env: RESEND_API_KEY=re_xxx
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -38,15 +36,13 @@ const USER_AGENT = "resend-mcp-server/1.0";
 async function resendRequest(method, path, body = null) {
   const url = `${RESEND_API_BASE}${path}`;
   const headers = {
-    "Authorization": `Bearer ${RESEND_API_KEY}`,
+    Authorization: `Bearer ${RESEND_API_KEY}`,
     "Content-Type": "application/json",
     "User-Agent": USER_AGENT,
   };
 
   const options = { method, headers };
-  if (body) {
-    options.body = JSON.stringify(body);
-  }
+  if (body) options.body = JSON.stringify(body);
 
   const response = await fetch(url, options);
   const data = await response.json();
@@ -84,21 +80,21 @@ const TOOLS = [
           items: {
             type: "object",
             properties: {
-              filename: { type: "string", description: "Filename of the attachment" },
-              content: { type: "string", description: "Base64-encoded content of the attachment" },
-              path: { type: "string", description: "URL path to the attachment file" },
-              contentType: { type: "string", description: "MIME type of the attachment" },
-            }
-          }
+              filename: { type: "string" },
+              content: { type: "string", description: "Base64-encoded content" },
+              path: { type: "string", description: "URL path to the file" },
+              contentType: { type: "string" },
+            },
+          },
         },
         template: {
           type: "object",
           description: "Use a published template instead of html/text",
           properties: {
             id: { type: "string", description: "ID or alias of the published template" },
-            variables: { type: "object", description: "Template variables as key/value pairs", additionalProperties: true }
+            variables: { type: "object", description: "Template variables as key/value pairs", additionalProperties: true },
           },
-          required: ["id"]
+          required: ["id"],
         },
         headers: { type: "object", description: "Custom email headers", additionalProperties: { type: "string" } },
         tags: {
@@ -107,15 +103,15 @@ const TOOLS = [
           items: {
             type: "object",
             properties: {
-              name: { type: "string", description: "Tag name (letters, numbers, underscores, dashes)" },
-              value: { type: "string", description: "Tag value (letters, numbers, underscores, dashes)" }
+              name: { type: "string" },
+              value: { type: "string" },
             },
-            required: ["name", "value"]
-          }
+            required: ["name", "value"],
+          },
         },
-        topicId: { type: "string", description: "Topic ID for subscription management" }
-      }
-    }
+        topicId: { type: "string", description: "Topic ID for subscription management" },
+      },
+    },
   },
   {
     name: "get_email",
@@ -123,10 +119,8 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       required: ["id"],
-      properties: {
-        id: { type: "string", description: "The email ID" }
-      }
-    }
+      properties: { id: { type: "string", description: "The email ID" } },
+    },
   },
   {
     name: "list_emails",
@@ -134,11 +128,11 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        limit: { type: "number", description: "Number of emails to return (default 20, max 100)" },
-        after: { type: "string", description: "Pagination cursor - get results after this ID" },
-        before: { type: "string", description: "Pagination cursor - get results before this ID" }
-      }
-    }
+        limit: { type: "number", description: "Number of emails (default 20, max 100)" },
+        after: { type: "string", description: "Pagination cursor" },
+        before: { type: "string", description: "Pagination cursor" },
+      },
+    },
   },
   {
     name: "cancel_email",
@@ -146,10 +140,8 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       required: ["id"],
-      properties: {
-        id: { type: "string", description: "The email ID to cancel" }
-      }
-    }
+      properties: { id: { type: "string", description: "The email ID to cancel" } },
+    },
   },
 
   // ─── TEMPLATES ───
@@ -162,26 +154,25 @@ const TOOLS = [
       properties: {
         name: { type: "string", description: "Template name (e.g. 'order-confirmation')" },
         html: { type: "string", description: "HTML content. Use {{{VARIABLE_NAME}}} for variables" },
-        alias: { type: "string", description: "Optional alias for the template" },
-        from: { type: "string", description: "Default sender email (can be overridden when sending)" },
-        subject: { type: "string", description: "Default subject line (can be overridden when sending)" },
-        replyTo: { type: "string", description: "Default reply-to address" },
-        text: { type: "string", description: "Plain text version" },
+        alias: { type: "string" },
+        from: { type: "string", description: "Default sender" },
+        subject: { type: "string", description: "Default subject" },
+        replyTo: { type: "string" },
+        text: { type: "string" },
         variables: {
           type: "array",
-          description: "Variables used in the template (max 50)",
           items: {
             type: "object",
             properties: {
-              key: { type: "string", description: "Variable name (e.g. PRODUCT_NAME). Cannot be: FIRST_NAME, LAST_NAME, EMAIL, RESEND_UNSUBSCRIBE_URL" },
-              type: { type: "string", enum: ["string", "number"], description: "Variable type" },
-              fallbackValue: { type: "string", description: "Default value if not provided when sending" }
+              key: { type: "string" },
+              type: { type: "string", enum: ["string", "number"] },
+              fallbackValue: { type: "string" },
             },
-            required: ["key", "type"]
-          }
-        }
-      }
-    }
+            required: ["key", "type"],
+          },
+        },
+      },
+    },
   },
   {
     name: "list_templates",
@@ -189,11 +180,11 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        limit: { type: "number", description: "Number of templates (default 20, max 100)" },
-        after: { type: "string", description: "Pagination cursor" },
-        before: { type: "string", description: "Pagination cursor" }
-      }
-    }
+        limit: { type: "number" },
+        after: { type: "string" },
+        before: { type: "string" },
+      },
+    },
   },
   {
     name: "get_template",
@@ -201,10 +192,8 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       required: ["id"],
-      properties: {
-        id: { type: "string", description: "The template ID" }
-      }
-    }
+      properties: { id: { type: "string" } },
+    },
   },
   {
     name: "update_template",
@@ -213,29 +202,17 @@ const TOOLS = [
       type: "object",
       required: ["id"],
       properties: {
-        id: { type: "string", description: "The template ID to update" },
-        name: { type: "string", description: "New template name" },
-        html: { type: "string", description: "New HTML content" },
-        alias: { type: "string", description: "New alias" },
-        from: { type: "string", description: "New default sender" },
-        subject: { type: "string", description: "New default subject" },
-        replyTo: { type: "string", description: "New default reply-to" },
-        text: { type: "string", description: "New plain text version" },
-        variables: {
-          type: "array",
-          description: "Updated variables",
-          items: {
-            type: "object",
-            properties: {
-              key: { type: "string" },
-              type: { type: "string", enum: ["string", "number"] },
-              fallbackValue: { type: "string" }
-            },
-            required: ["key", "type"]
-          }
-        }
-      }
-    }
+        id: { type: "string" },
+        name: { type: "string" },
+        html: { type: "string" },
+        alias: { type: "string" },
+        from: { type: "string" },
+        subject: { type: "string" },
+        replyTo: { type: "string" },
+        text: { type: "string" },
+        variables: { type: "array", items: { type: "object" } },
+      },
+    },
   },
   {
     name: "delete_template",
@@ -243,10 +220,8 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       required: ["id"],
-      properties: {
-        id: { type: "string", description: "The template ID to delete" }
-      }
-    }
+      properties: { id: { type: "string" } },
+    },
   },
   {
     name: "publish_template",
@@ -254,10 +229,8 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       required: ["id"],
-      properties: {
-        id: { type: "string", description: "The template ID to publish" }
-      }
-    }
+      properties: { id: { type: "string" } },
+    },
   },
   {
     name: "duplicate_template",
@@ -266,10 +239,10 @@ const TOOLS = [
       type: "object",
       required: ["id"],
       properties: {
-        id: { type: "string", description: "The template ID to duplicate" },
-        name: { type: "string", description: "New name for the duplicated template" }
-      }
-    }
+        id: { type: "string" },
+        name: { type: "string", description: "New name for the duplicated template" },
+      },
+    },
   },
 
   // ─── BROADCASTS ───
@@ -280,18 +253,18 @@ const TOOLS = [
       type: "object",
       required: ["segmentId", "from", "subject"],
       properties: {
-        segmentId: { type: "string", description: "The ID of the segment/audience to send to" },
-        from: { type: "string", description: "Sender email address" },
-        subject: { type: "string", description: "Email subject" },
-        html: { type: "string", description: "HTML content. Use {{{contact.first_name}}} for personalization" },
-        text: { type: "string", description: "Plain text version" },
-        replyTo: { type: "string", description: "Reply-to address" },
-        name: { type: "string", description: "Friendly name for internal reference" },
-        topicId: { type: "string", description: "Topic ID to scope the broadcast" },
-        send: { type: "boolean", description: "Send immediately after creation (default: false)" },
-        scheduledAt: { type: "string", description: "Schedule sending (requires send: true). Natural language or ISO 8601" }
-      }
-    }
+        segmentId: { type: "string", description: "The ID of the segment to send to" },
+        from: { type: "string" },
+        subject: { type: "string" },
+        html: { type: "string" },
+        text: { type: "string" },
+        replyTo: { type: "string" },
+        name: { type: "string" },
+        topicId: { type: "string" },
+        send: { type: "boolean", description: "Send immediately (default: false)" },
+        scheduledAt: { type: "string" },
+      },
+    },
   },
   {
     name: "send_broadcast",
@@ -300,10 +273,10 @@ const TOOLS = [
       type: "object",
       required: ["broadcastId"],
       properties: {
-        broadcastId: { type: "string", description: "The broadcast ID to send" },
-        scheduledAt: { type: "string", description: "Optional schedule time (natural language or ISO 8601)" }
-      }
-    }
+        broadcastId: { type: "string" },
+        scheduledAt: { type: "string" },
+      },
+    },
   },
   {
     name: "list_broadcasts",
@@ -311,11 +284,11 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        limit: { type: "number", description: "Number of broadcasts (default 20, max 100)" },
-        after: { type: "string", description: "Pagination cursor" },
-        before: { type: "string", description: "Pagination cursor" }
-      }
-    }
+        limit: { type: "number" },
+        after: { type: "string" },
+        before: { type: "string" },
+      },
+    },
   },
   {
     name: "get_broadcast",
@@ -323,10 +296,8 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       required: ["id"],
-      properties: {
-        id: { type: "string", description: "The broadcast ID" }
-      }
-    }
+      properties: { id: { type: "string" } },
+    },
   },
   {
     name: "update_broadcast",
@@ -335,7 +306,7 @@ const TOOLS = [
       type: "object",
       required: ["id"],
       properties: {
-        id: { type: "string", description: "The broadcast ID to update" },
+        id: { type: "string" },
         from: { type: "string" },
         subject: { type: "string" },
         html: { type: "string" },
@@ -343,9 +314,9 @@ const TOOLS = [
         replyTo: { type: "string" },
         name: { type: "string" },
         segmentId: { type: "string" },
-        topicId: { type: "string" }
-      }
-    }
+        topicId: { type: "string" },
+      },
+    },
   },
   {
     name: "delete_broadcast",
@@ -353,41 +324,38 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       required: ["id"],
-      properties: {
-        id: { type: "string", description: "The broadcast ID to delete" }
-      }
-    }
+      properties: { id: { type: "string" } },
+    },
   },
 
   // ─── CONTACTS ───
   {
     name: "create_contact",
-    description: "Create a new contact in a segment",
+    description: "Create a new contact",
     inputSchema: {
       type: "object",
       required: ["email"],
       properties: {
-        email: { type: "string", description: "Contact email address" },
-        firstName: { type: "string", description: "First name" },
-        lastName: { type: "string", description: "Last name" },
-        unsubscribed: { type: "boolean", description: "Set to true if contact is unsubscribed" },
-        segmentId: { type: "string", description: "Optional: add to a specific segment" },
-        properties: { type: "object", description: "Custom properties as key/value pairs", additionalProperties: { type: "string" } }
-      }
-    }
+        email: { type: "string" },
+        firstName: { type: "string" },
+        lastName: { type: "string" },
+        unsubscribed: { type: "boolean" },
+        segmentId: { type: "string" },
+      },
+    },
   },
   {
     name: "list_contacts",
-    description: "List all contacts with optional filtering",
+    description: "List all contacts",
     inputSchema: {
       type: "object",
       properties: {
-        limit: { type: "number", description: "Number of contacts (default 20, max 100)" },
-        after: { type: "string", description: "Pagination cursor" },
-        before: { type: "string", description: "Pagination cursor" },
-        segmentId: { type: "string", description: "Filter by segment ID" }
-      }
-    }
+        limit: { type: "number" },
+        after: { type: "string" },
+        before: { type: "string" },
+        segmentId: { type: "string" },
+      },
+    },
   },
   {
     name: "get_contact",
@@ -395,10 +363,8 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       required: ["id"],
-      properties: {
-        id: { type: "string", description: "The contact ID" }
-      }
-    }
+      properties: { id: { type: "string" } },
+    },
   },
   {
     name: "update_contact",
@@ -407,13 +373,12 @@ const TOOLS = [
       type: "object",
       required: ["id"],
       properties: {
-        id: { type: "string", description: "The contact ID to update" },
+        id: { type: "string" },
         firstName: { type: "string" },
         lastName: { type: "string" },
         unsubscribed: { type: "boolean" },
-        properties: { type: "object", additionalProperties: { type: "string" } }
-      }
-    }
+      },
+    },
   },
   {
     name: "delete_contact",
@@ -421,20 +386,15 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       required: ["id"],
-      properties: {
-        id: { type: "string", description: "The contact ID to delete" }
-      }
-    }
+      properties: { id: { type: "string" } },
+    },
   },
 
   // ─── SEGMENTS ───
   {
     name: "list_segments",
     description: "List all segments (formerly audiences)",
-    inputSchema: {
-      type: "object",
-      properties: {}
-    }
+    inputSchema: { type: "object", properties: {} },
   },
   {
     name: "create_segment",
@@ -442,20 +402,15 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       required: ["name"],
-      properties: {
-        name: { type: "string", description: "Segment name" }
-      }
-    }
+      properties: { name: { type: "string" } },
+    },
   },
 
   // ─── DOMAINS ───
   {
     name: "list_domains",
     description: "List all verified and pending domains",
-    inputSchema: {
-      type: "object",
-      properties: {}
-    }
+    inputSchema: { type: "object", properties: {} },
   },
 
   // ─── LOGS ───
@@ -465,15 +420,15 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        limit: { type: "number", description: "Number of logs (default 20, max 100)" },
-        after: { type: "string", description: "Pagination cursor" },
-        before: { type: "string", description: "Pagination cursor" }
-      }
-    }
-  }
+        limit: { type: "number" },
+        after: { type: "string" },
+        before: { type: "string" },
+      },
+    },
+  },
 ];
 
-// ─── Tool Handler ────────────────────────────────────────────
+// ─── Create MCP Server ───────────────────────────────────────
 
 const server = new Server(
   { name: "resend-mcp-server", version: "1.0.0" },
@@ -481,7 +436,7 @@ const server = new Server(
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: TOOLS
+  tools: TOOLS,
 }));
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -507,7 +462,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           template: args.template,
           headers: args.headers,
           tags: args.tags,
-          topic_id: args.topicId
+          topic_id: args.topicId,
         });
         break;
 
@@ -516,11 +471,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         break;
 
       case "list_emails": {
-        const params = new URLSearchParams();
-        if (args?.limit) params.set("limit", args.limit);
-        if (args?.after) params.set("after", args.after);
-        if (args?.before) params.set("before", args.before);
-        const qs = params.toString();
+        const p = new URLSearchParams();
+        if (args?.limit) p.set("limit", args.limit);
+        if (args?.after) p.set("after", args.after);
+        if (args?.before) p.set("before", args.before);
+        const qs = p.toString();
         result = await resendRequest("GET", `/emails${qs ? "?" + qs : ""}`);
         break;
       }
@@ -539,16 +494,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           subject: args.subject,
           reply_to: args.replyTo,
           text: args.text,
-          variables: args.variables
+          variables: args.variables,
         });
         break;
 
       case "list_templates": {
-        const params = new URLSearchParams();
-        if (args?.limit) params.set("limit", args.limit);
-        if (args?.after) params.set("after", args.after);
-        if (args?.before) params.set("before", args.before);
-        const qs = params.toString();
+        const p = new URLSearchParams();
+        if (args?.limit) p.set("limit", args.limit);
+        if (args?.after) p.set("after", args.after);
+        if (args?.before) p.set("before", args.before);
+        const qs = p.toString();
         result = await resendRequest("GET", `/templates${qs ? "?" + qs : ""}`);
         break;
       }
@@ -566,7 +521,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           subject: args.subject,
           reply_to: args.replyTo,
           text: args.text,
-          variables: args.variables
+          variables: args.variables,
         });
         break;
 
@@ -580,7 +535,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "duplicate_template":
         result = await resendRequest("POST", `/templates/${args.id}/duplicate`, {
-          name: args.name
+          name: args.name,
         });
         break;
 
@@ -596,22 +551,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           name: args.name,
           topic_id: args.topicId,
           send: args.send,
-          scheduled_at: args.scheduledAt
+          scheduled_at: args.scheduledAt,
         });
         break;
 
       case "send_broadcast":
         result = await resendRequest("POST", `/broadcasts/${args.broadcastId}/send`, {
-          scheduled_at: args.scheduledAt
+          scheduled_at: args.scheduledAt,
         });
         break;
 
       case "list_broadcasts": {
-        const params = new URLSearchParams();
-        if (args?.limit) params.set("limit", args.limit);
-        if (args?.after) params.set("after", args.after);
-        if (args?.before) params.set("before", args.before);
-        const qs = params.toString();
+        const p = new URLSearchParams();
+        if (args?.limit) p.set("limit", args.limit);
+        if (args?.after) p.set("after", args.after);
+        if (args?.before) p.set("before", args.before);
+        const qs = p.toString();
         result = await resendRequest("GET", `/broadcasts${qs ? "?" + qs : ""}`);
         break;
       }
@@ -629,7 +584,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           reply_to: args.replyTo,
           name: args.name,
           segment_id: args.segmentId,
-          topic_id: args.topicId
+          topic_id: args.topicId,
         });
         break;
 
@@ -645,17 +600,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           last_name: args.lastName,
           unsubscribed: args.unsubscribed,
           segment_id: args.segmentId,
-          properties: args.properties
         });
         break;
 
       case "list_contacts": {
-        const params = new URLSearchParams();
-        if (args?.limit) params.set("limit", args.limit);
-        if (args?.after) params.set("after", args.after);
-        if (args?.before) params.set("before", args.before);
-        if (args?.segmentId) params.set("segment_id", args.segmentId);
-        const qs = params.toString();
+        const p = new URLSearchParams();
+        if (args?.limit) p.set("limit", args.limit);
+        if (args?.after) p.set("after", args.after);
+        if (args?.before) p.set("before", args.before);
+        if (args?.segmentId) p.set("segment_id", args.segmentId);
+        const qs = p.toString();
         result = await resendRequest("GET", `/contacts${qs ? "?" + qs : ""}`);
         break;
       }
@@ -669,7 +623,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           first_name: args.firstName,
           last_name: args.lastName,
           unsubscribed: args.unsubscribed,
-          properties: args.properties
         });
         break;
 
@@ -693,11 +646,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       // ── Logs ──
       case "list_logs": {
-        const params = new URLSearchParams();
-        if (args?.limit) params.set("limit", args.limit);
-        if (args?.after) params.set("after", args.after);
-        if (args?.before) params.set("before", args.before);
-        const qs = params.toString();
+        const p = new URLSearchParams();
+        if (args?.limit) p.set("limit", args.limit);
+        if (args?.after) p.set("after", args.after);
+        if (args?.before) p.set("before", args.before);
+        const qs = p.toString();
         result = await resendRequest("GET", `/logs${qs ? "?" + qs : ""}`);
         break;
       }
@@ -707,19 +660,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     return {
-      content: [{
-        type: "text",
-        text: JSON.stringify(result, null, 2)
-      }]
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
     };
-
   } catch (error) {
     return {
       isError: true,
-      content: [{
-        type: "text",
-        text: `Error: ${error.message}`
-      }]
+      content: [{ type: "text", text: `Error: ${error.message}` }],
     };
   }
 });
@@ -727,9 +673,49 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 // ─── Start Server ────────────────────────────────────────────
 
 async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("✅ Resend MCP Server is running!");
+  const PORT = process.env.PORT;
+
+  if (PORT) {
+    // ── CLOUD MODE: SSE HTTP Server ──
+    // For TypingMind URL connection: just enter the server URL
+    const { SSEServerTransport } = await import(
+      "@modelcontextprotocol/sdk/server/sse.js"
+    );
+    const express = (await import("express")).default;
+    const cors = (await import("cors")).default;
+
+    const app = express();
+    app.use(cors());
+    app.use(express.json());
+
+    let transport;
+
+    app.get("/sse", (req, res) => {
+      transport = new SSEServerTransport("/messages", res);
+      server.connect(transport);
+    });
+
+    app.post("/messages", (req, res) => {
+      if (transport) {
+        transport.handlePostMessage(req, res);
+      }
+    });
+
+    app.get("/health", (req, res) => {
+      res.json({ status: "ok", tools: TOOLS.length });
+    });
+
+    app.listen(PORT, () => {
+      console.error(`✅ Resend MCP Server running on port ${PORT}`);
+      console.error(`   SSE endpoint: http://localhost:${PORT}/sse`);
+      console.error(`   Health check: http://localhost:${PORT}/health`);
+    });
+  } else {
+    // ── LOCAL MODE: stdio ──
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    console.error("✅ Resend MCP Server running (stdio mode)");
+  }
 }
 
 main().catch((error) => {
