@@ -683,29 +683,32 @@ async function main() {
 
     const app = express();
     
-    // 1. POVOLÍME POUZE CORS. 
-    // POZOR: Žádné app.use(express.json()) tady nesmí být!
+    // Zásadní: Povolit CORS, ale NEČÍST json přes express (to dělá MCP samo)
     app.use(cors());
 
-    // 2. Health check (Když si to otevřeš v prohlížeči, uvidíš, že to žije)
+    // ŠPIONSKÝ BLOK: Vypíše do logu každý jeden dotaz, který na server dorazí
+    app.use((req, res, next) => {
+      console.log(`[REQ] Zaznamenán pokus: ${req.method} na adresu ${req.url}`);
+      console.log(`[REQ-HEADERS]`, req.headers);
+      next();
+    });
+
     app.get("/health", (req, res) => {
       res.json({ status: "ok", tools: 26, transport: "streamable-http" });
     });
 
-    // 3. Inicializace transportu
     const transport = new StreamableHTTPServerTransport();
-
-    // 4. Bezpečné propojení (provede se jen jednou)
     server.connect(transport).catch(err => console.error("Chyba připojení serveru:", err));
 
-    // 5. Hlavní endpoint pro TypingMind
     app.all("/mcp", async (req, res) => {
       try {
+        console.log(`[MCP] Odesílám požadavek do transportu...`);
         await transport.handleRequest(req, res);
+        console.log(`[MCP] Transport úspěšně dokončil práci.`);
       } catch (err) {
-        console.error("[MCP] Vnitřní chyba transportu:", err);
+        console.error("[MCP-ERROR] Vnitřní chyba transportu:", err);
         if (!res.headersSent) {
-          res.status(500).send("MCP Error");
+          res.status(500).json({ error: "Transport Error", msg: err.message });
         }
       }
     });
@@ -715,14 +718,12 @@ async function main() {
     });
 
   } else {
-    // ── LOCAL MODE (stdio) ──
     const transport = new StdioServerTransport();
     await server.connect(transport);
     console.error("🚀 Resend MCP Server běží lokálně (stdio)");
   }
 }
 
-// Spuštění aplikace
 main().catch((error) => {
   console.error("Kritická chyba při startu:", error);
   process.exit(1);
