@@ -682,70 +682,34 @@ async function main() {
     const express = (await import("express")).default;
     const cors = (await import("cors")).default;
 
-    const app = express();
-    app.use(cors());
-    app.use(express.json());
+    // ==============================================================
+// OPRAVENÁ SPODNÍ ČÁST S EXPRESS SERVEREM A STREAMABLE HTTP
+// ==============================================================
 
-    // Store active transports by session ID
-    const transports = {};
+const app = express();
 
-    // Streamable HTTP endpoint - handles both POST and GET
-    app.all("/mcp", async (req, res) => {
-      try {
-        const sessionId = req.headers["mcp-session-id"];
-        let transport;
+// Typemind potřebuje CORS a schopnost číst JSON
+app.use(cors());
+app.use(express.json());
 
-        if (sessionId && transports[sessionId]) {
-          // Reuse existing transport for ongoing session
-          transport = transports[sessionId];
-        } else {
-          // Create new transport for new session
-          transport = new StreamableHTTPServerTransport({
-            sessionIdGenerator: () => crypto.randomUUID(),
-          });
-          transport.onclose = () => {
-            if (transport.sessionId) {
-              delete transports[transport.sessionId];
-            }
-          };
-          transports[transport.sessionId] = transport;
-          await server.connect(transport);
-        }
+// 1. Vytvoření transportu MUSÍ být venku (jen jednou) a v tzv. stateless režimu
+const transport = new StreamableHTTPServerTransport({
+  sessionIdGenerator: undefined // Tohle je kritické pro stateless chod z Typemindu!
+});
 
-        await transport.handleRequest(req, res);
-      } catch (error) {
-        console.error("MCP request error:", error);
-        if (!res.headersSent) {
-          res.status(500).json({ error: "Internal server error" });
-        }
-      }
-    });
+// 2. Propojení s MCP serverem MUSÍ být taky venku (zavolá se jen jednou při startu aplikce)
+server.connect(transport).catch(console.error);
 
-    // Also handle /mcp/ with trailing slash
-    app.all("/mcp/", async (req, res) => {
-      req.url = "/mcp";
-      return app.handle(req, res);
-    });
-
-    // Health check
-    app.get("/health", (req, res) => {
-      res.json({ status: "ok", tools: TOOLS.length, transport: "streamable-http" });
-    });
-
-    app.listen(PORT, () => {
-      console.error(`✅ Resend MCP Server running on port ${PORT}`);
-      console.error(`   Streamable HTTP endpoint: http://localhost:${PORT}/mcp`);
-      console.error(`   Health check: http://localhost:${PORT}/health`);
-    });
-  } else {
-    // ── LOCAL MODE: stdio ──
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
-    console.error("✅ Resend MCP Server running (stdio mode)");
+// 3. Všechny HTTP metody namíříme na jeden endpoint a předáme transportu
+app.all("/mcp", async (req, res) => {
+  try {
+    await transport.handleRequest(req, res);
+  } catch (err) {
+    console.error("Chyba při zpracování MCP requestu:", err);
   }
-}
+});
 
-main().catch((error) => {
-  console.error("Fatal error:", error);
-  process.exit(1);
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`🚀 Resend MCP Server běží na portu ${port} (Streamable HTTP endpoint: /mcp)`);
 });
