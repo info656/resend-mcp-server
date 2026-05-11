@@ -3,9 +3,7 @@ import cors from "cors";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import dotenv from "dotenv";
 
-dotenv.config();
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 if (!RESEND_API_KEY) {
