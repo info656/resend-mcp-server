@@ -682,20 +682,34 @@ async function main() {
     const cors = (await import("cors")).default;
 
     const app = express();
+    
     app.use(cors());
     app.use(express.json());
 
     const transport = new StreamableHTTPServerTransport();
 
-    // Propojení MCP serveru s transportem (Provede se jen 1x při startu)
-    server.connect(transport).catch(console.error);
+    // Propojení s MCP serverem
+    server.connect(transport).catch(err => console.error("Chyba připojení serveru:", err));
 
-    // Všechny příkazy jdou na 1 endpoint
+    // 1. HEALTH CHECK (Tohle nám chybělo!)
+    app.get("/health", (req, res) => {
+      res.json({
+        status: "ok",
+        tools: 26,
+        transport: "streamable-http"
+      });
+    });
+
+    // 2. HLAVNÍ MCP ENDPOINT PRO TYPEMIND
     app.all("/mcp", async (req, res) => {
+      console.log(`[MCP] Zaznamenán ${req.method} požadavek od Typemindu`);
       try {
         await transport.handleRequest(req, res);
       } catch (err) {
-        console.error("Chyba při zpracování MCP requestu:", err);
+        console.error("[MCP] Vnitřní chyba transportu:", err);
+        if (!res.headersSent) {
+          res.status(500).json({ error: "Interní chyba MCP serveru", details: err.message });
+        }
       }
     });
 
@@ -711,7 +725,7 @@ async function main() {
   }
 }
 
-// TOTO CHYBĚLO: Spuštění celé té hlavní funkce!
+// Spuštění aplikace
 main().catch((error) => {
   console.error("Kritická chyba při startu:", error);
   process.exit(1);
