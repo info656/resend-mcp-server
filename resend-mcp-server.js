@@ -677,39 +677,42 @@ async function main() {
   const PORT = process.env.PORT;
 
   if (PORT) {
-    // ── CLOUD MODE: Streamable HTTP Server (new MCP standard) ──
-    // For Typemind URL connection: use http://your-domain/mcp
+    // ── CLOUD MODE: Streamable HTTP Server (pro Railway a Typemind) ──
     const express = (await import("express")).default;
     const cors = (await import("cors")).default;
 
-    // ==============================================================
-// OPRAVENÁ SPODNÍ ČÁST S EXPRESS SERVEREM A STREAMABLE HTTP
-// ==============================================================
+    const app = express();
+    app.use(cors());
+    app.use(express.json());
 
-const app = express();
+    const transport = new StreamableHTTPServerTransport();
 
-// Typemind potřebuje CORS a schopnost číst JSON
-app.use(cors());
-app.use(express.json());
+    // Propojení MCP serveru s transportem (Provede se jen 1x při startu)
+    server.connect(transport).catch(console.error);
 
-// 1. Vytvoření transportu MUSÍ být venku (jen jednou) a v tzv. stateless režimu
-const transport = new StreamableHTTPServerTransport({
-  sessionIdGenerator: undefined // Tohle je kritické pro stateless chod z Typemindu!
-});
+    // Všechny příkazy jdou na 1 endpoint
+    app.all("/mcp", async (req, res) => {
+      try {
+        await transport.handleRequest(req, res);
+      } catch (err) {
+        console.error("Chyba při zpracování MCP requestu:", err);
+      }
+    });
 
-// 2. Propojení s MCP serverem MUSÍ být taky venku (zavolá se jen jednou při startu aplikce)
-server.connect(transport).catch(console.error);
+    app.listen(PORT, () => {
+      console.log(`🚀 Resend MCP Server běží na portu ${PORT} (Streamable HTTP endpoint: /mcp)`);
+    });
 
-// 3. Všechny HTTP metody namíříme na jeden endpoint a předáme transportu
-app.all("/mcp", async (req, res) => {
-  try {
-    await transport.handleRequest(req, res);
-  } catch (err) {
-    console.error("Chyba při zpracování MCP requestu:", err);
+  } else {
+    // ── LOCAL MODE: Stdio (pro testování na lokálním PC) ──
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    console.error("🚀 Resend MCP Server běží lokálně (stdio)");
   }
-});
+}
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`🚀 Resend MCP Server běží na portu ${port} (Streamable HTTP endpoint: /mcp)`);
+// TOTO CHYBĚLO: Spuštění celé té hlavní funkce!
+main().catch((error) => {
+  console.error("Kritická chyba při startu:", error);
+  process.exit(1);
 });
