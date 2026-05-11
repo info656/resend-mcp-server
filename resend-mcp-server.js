@@ -677,48 +677,45 @@ async function main() {
   const PORT = process.env.PORT;
 
   if (PORT) {
-    // ── CLOUD MODE: Streamable HTTP Server (pro Railway a Typemind) ──
+    // ── CLOUD MODE: Streamable HTTP Server ──
     const express = (await import("express")).default;
     const cors = (await import("cors")).default;
 
     const app = express();
     
+    // 1. POVOLÍME POUZE CORS. 
+    // POZOR: Žádné app.use(express.json()) tady nesmí být!
     app.use(cors());
-    app.use(express.json());
 
-    const transport = new StreamableHTTPServerTransport();
-
-    // Propojení s MCP serverem
-    server.connect(transport).catch(err => console.error("Chyba připojení serveru:", err));
-
-    // 1. HEALTH CHECK (Tohle nám chybělo!)
+    // 2. Health check (Když si to otevřeš v prohlížeči, uvidíš, že to žije)
     app.get("/health", (req, res) => {
-      res.json({
-        status: "ok",
-        tools: 26,
-        transport: "streamable-http"
-      });
+      res.json({ status: "ok", tools: 26, transport: "streamable-http" });
     });
 
-    // 2. HLAVNÍ MCP ENDPOINT PRO TYPEMIND
+    // 3. Inicializace transportu
+    const transport = new StreamableHTTPServerTransport();
+
+    // 4. Bezpečné propojení (provede se jen jednou)
+    server.connect(transport).catch(err => console.error("Chyba připojení serveru:", err));
+
+    // 5. Hlavní endpoint pro TypingMind
     app.all("/mcp", async (req, res) => {
-      console.log(`[MCP] Zaznamenán ${req.method} požadavek od Typemindu`);
       try {
         await transport.handleRequest(req, res);
       } catch (err) {
         console.error("[MCP] Vnitřní chyba transportu:", err);
         if (!res.headersSent) {
-          res.status(500).json({ error: "Interní chyba MCP serveru", details: err.message });
+          res.status(500).send("MCP Error");
         }
       }
     });
 
     app.listen(PORT, () => {
-      console.log(`🚀 Resend MCP Server běží na portu ${PORT} (Streamable HTTP endpoint: /mcp)`);
+      console.log(`🚀 Resend MCP Server běží na portu ${PORT} (Endpoint: /mcp)`);
     });
 
   } else {
-    // ── LOCAL MODE: Stdio (pro testování na lokálním PC) ──
+    // ── LOCAL MODE (stdio) ──
     const transport = new StdioServerTransport();
     await server.connect(transport);
     console.error("🚀 Resend MCP Server běží lokálně (stdio)");
