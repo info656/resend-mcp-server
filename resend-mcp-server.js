@@ -7,14 +7,15 @@
  * Supports: Emails, Templates, Broadcasts, Contacts, Segments, Domains, Logs
  *
  * TWO MODES:
- * 1. LOCAL: node resend-mcp-server.js           → stdio (for local TypingMind MCP)
- * 2. CLOUD: PORT=3000 node resend-mcp-server.js → SSE HTTP server (for URL connection)
+ * 1. LOCAL: node resend-mcp-server.js → stdio (for local Typemind MCP)
+ * 2. CLOUD: PORT=3000 node resend-mcp-server.js → Streamable HTTP server (for URL connection)
  *
  * Env: RESEND_API_KEY=re_xxx
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -29,7 +30,7 @@ if (!RESEND_API_KEY) {
 }
 
 const RESEND_API_BASE = "https://api.resend.com";
-const USER_AGENT = "resend-mcp-server/1.0";
+const USER_AGENT = "resend-mcp-server/2.0";
 
 // ─── API Helper ──────────────────────────────────────────────
 
@@ -65,7 +66,7 @@ const TOOLS = [
       type: "object",
       required: ["from", "to", "subject"],
       properties: {
-        from: { type: "string", description: "Sender email address. Use format: 'Name <email@domain.com>'" },
+        from: { type: "string", description: "Sender email address. Use format: 'Name <email>'" },
         to: { type: "array", items: { type: "string" }, description: "Recipient email addresses (max 50)" },
         subject: { type: "string", description: "Email subject line" },
         html: { type: "string", description: "HTML content of the email" },
@@ -431,7 +432,7 @@ const TOOLS = [
 // ─── Create MCP Server ───────────────────────────────────────
 
 const server = new Server(
-  { name: "resend-mcp-server", version: "1.0.0" },
+  { name: "resend-mcp-server", version: "2.0.0" },
   { capabilities: { tools: {} } }
 );
 
@@ -676,11 +677,8 @@ async function main() {
   const PORT = process.env.PORT;
 
   if (PORT) {
-    // ── CLOUD MODE: SSE HTTP Server ──
-    // For TypingMind URL connection: just enter the server URL
-    const { SSEServerTransport } = await import(
-      "@modelcontextprotocol/sdk/server/sse.js"
-    );
+    // ── CLOUD MODE: Streamable HTTP Server (new MCP standard) ──
+    // For Typemind URL connection: use http://your-domain/mcp
     const express = (await import("express")).default;
     const cors = (await import("cors")).default;
 
@@ -688,26 +686,55 @@ async function main() {
     app.use(cors());
     app.use(express.json());
 
-    let transport;
+    // Store active transports by session ID
+    const transports = {};
 
-    app.get("/sse", (req, res) => {
-      transport = new SSEServerTransport("/messages", res);
-      server.connect(transport);
-    });
+    // Streamable HTTP endpoint - handles both POST and GET
+    app.all("/mcp", async (req, res) => {
+      try {
+        const sessionId = req.headers["mcp-session-id"];
+        let transport;
 
-    app.post("/messages", (req, res) => {
-      if (transport) {
-        transport.handlePostMessage(req, res);
+        if (sessionId && transports[sessionId]) {
+          // Reuse existing transport for ongoing session
+          transport = transports[sessionId];
+        } else {
+          // Create new transport for new session
+          transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => crypto.randomUUID(),
+          });
+          transport.onclose = () => {
+            if (transport.sessionId) {
+              delete transports[transport.sessionId];
+            }
+          };
+          transports[transport.sessionId] = transport;
+          await server.connect(transport);
+        }
+
+        await transport.handleRequest(req, res);
+      } catch (error) {
+        console.error("MCP request error:", error);
+        if (!res.headersSent) {
+          res.status(500).json({ error: "Internal server error" });
+        }
       }
     });
 
+    // Also handle /mcp/ with trailing slash
+    app.all("/mcp/", async (req, res) => {
+      req.url = "/mcp";
+      return app.handle(req, res);
+    });
+
+    // Health check
     app.get("/health", (req, res) => {
-      res.json({ status: "ok", tools: TOOLS.length });
+      res.json({ status: "ok", tools: TOOLS.length, transport: "streamable-http" });
     });
 
     app.listen(PORT, () => {
       console.error(`✅ Resend MCP Server running on port ${PORT}`);
-      console.error(`   SSE endpoint: http://localhost:${PORT}/sse`);
+      console.error(`   Streamable HTTP endpoint: http://localhost:${PORT}/mcp`);
       console.error(`   Health check: http://localhost:${PORT}/health`);
     });
   } else {
