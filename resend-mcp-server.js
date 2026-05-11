@@ -4,7 +4,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
-
+// Žádný dotenv! Railway si klíč vezme rovnou z Variables.
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 if (!RESEND_API_KEY) {
   console.error("❌ RESEND_API_KEY environment variable is required");
@@ -14,7 +14,7 @@ if (!RESEND_API_KEY) {
 const RESEND_API_BASE = "https://api.resend.com";
 const USER_AGENT = "resend-mcp-server/2.0";
 
-// ─── API Helper (Tvůj původní chytrý wrapper) ─────────────────
+// ─── API Helper ──────────────────────────────────────────────
 async function resendRequest(method, path, body = null) {
   const url = `${RESEND_API_BASE}${path}`;
   const headers = {
@@ -35,9 +35,8 @@ async function resendRequest(method, path, body = null) {
   return data;
 }
 
-// ─── DEFINICE VŠECH TVÝCH NÁSTROJŮ ────────────────────────────
+// ─── DEFINICE TVÝCH 26 NÁSTROJŮ ──────────────────────────────
 const TOOLS = [
-  // ─── EMAILS ───
   {
     name: "send_email",
     description: "Send an email via Resend. Supports HTML, plain text, attachments, templates, scheduling, and more.",
@@ -50,16 +49,11 @@ const TOOLS = [
         subject: { type: "string" },
         html: { type: "string" },
         text: { type: "string" },
-        bcc: { type: "array", items: { type: "string" } },
-        cc: { type: "array", items: { type: "string" } },
         replyTo: { type: "string" },
         scheduledAt: { type: "string" },
         template: {
           type: "object",
-          properties: {
-            id: { type: "string" },
-            variables: { type: "object", additionalProperties: true },
-          },
+          properties: { id: { type: "string" }, variables: { type: "object", additionalProperties: true } },
           required: ["id"],
         },
       },
@@ -68,26 +62,18 @@ const TOOLS = [
   { name: "get_email", description: "Retrieve details of a sent email by ID", inputSchema: { type: "object", required: ["id"], properties: { id: { type: "string" } } } },
   { name: "list_emails", description: "List all sent emails", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
   { name: "cancel_email", description: "Cancel a scheduled email", inputSchema: { type: "object", required: ["id"], properties: { id: { type: "string" } } } },
-
-  // ─── TEMPLATES ───
   {
     name: "create_template",
     description: "Create a new email template",
     inputSchema: {
       type: "object",
       required: ["name", "html"],
-      properties: {
-        name: { type: "string" },
-        html: { type: "string" },
-        subject: { type: "string" },
-      },
+      properties: { name: { type: "string" }, html: { type: "string" }, subject: { type: "string" } },
     },
   },
   { name: "list_templates", description: "List all email templates", inputSchema: { type: "object", properties: {} } },
   { name: "get_template", description: "Get details of a specific template", inputSchema: { type: "object", required: ["id"], properties: { id: { type: "string" } } } },
   { name: "publish_template", description: "Publish a draft template", inputSchema: { type: "object", required: ["id"], properties: { id: { type: "string" } } } },
-
-  // ─── BROADCASTS, CONTACTS, SEGMENTS, DOMAINS, LOGS ───
   { name: "create_broadcast", description: "Create a broadcast", inputSchema: { type: "object", required: ["segmentId", "from", "subject"], properties: { segmentId: { type: "string" }, from: { type: "string" }, subject: { type: "string" }, html: { type: "string" } } } },
   { name: "list_broadcasts", description: "List all broadcasts", inputSchema: { type: "object", properties: {} } },
   { name: "list_contacts", description: "List contacts", inputSchema: { type: "object", properties: { segmentId: { type: "string" } } } },
@@ -97,7 +83,7 @@ const TOOLS = [
   { name: "list_logs", description: "List delivery logs", inputSchema: { type: "object", properties: {} } }
 ];
 
-// ─── FUNKCE PRO VYTVOŘENÍ SERVERU (Zabrání padání při reconnectu) ───
+// ─── MCP SERVER (BEZPEČNÝ INSTANČNÍ MODEL) ───────────────────
 function createNewMcpServer() {
   const server = new Server({ name: "resend-mcp-server", version: "2.0.0" }, { capabilities: { tools: {} } });
 
@@ -117,12 +103,10 @@ function createNewMcpServer() {
         case "get_email": result = await resendRequest("GET", `/emails/${args.id}`); break;
         case "list_emails": result = await resendRequest("GET", `/emails`); break;
         case "cancel_email": result = await resendRequest("POST", `/emails/${args.id}/cancel`); break;
-        
         case "create_template": result = await resendRequest("POST", "/templates", { name: args.name, html: args.html, subject: args.subject }); break;
         case "list_templates": result = await resendRequest("GET", `/templates`); break;
         case "get_template": result = await resendRequest("GET", `/templates/${args.id}`); break;
         case "publish_template": result = await resendRequest("POST", `/templates/${args.id}/publish`); break;
-
         case "create_broadcast": result = await resendRequest("POST", "/broadcasts", { segment_id: args.segmentId, from: args.from, subject: args.subject, html: args.html }); break;
         case "list_broadcasts": result = await resendRequest("GET", `/broadcasts`); break;
         case "list_contacts": result = await resendRequest("GET", args.segmentId ? `/contacts?segment_id=${args.segmentId}` : `/contacts`); break;
@@ -130,7 +114,6 @@ function createNewMcpServer() {
         case "list_segments": result = await resendRequest("GET", "/segments"); break;
         case "list_domains": result = await resendRequest("GET", "/domains"); break;
         case "list_logs": result = await resendRequest("GET", "/logs"); break;
-        
         default: throw new Error(`Unknown tool: ${name}`);
       }
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
@@ -142,15 +125,17 @@ function createNewMcpServer() {
   return server;
 }
 
-// ─── WEBOVÝ SERVER A SSE TRANSPORT ────────────────────────────
+// ─── WEBOVÝ SERVER PRO SSE ───────────────────────────────────
 const app = express();
+
+// POZOR: Povolíme CORS, ale NENÍ TU express.json()
 app.use(cors());
-app.use(express.json());
 
 const transports = new Map();
 
+// Zde TypingMind zahajuje spojení
 app.get("/sse", async (req, res) => {
-  console.log("✅ Nové připojení k SSE");
+  console.log("✅ Nové GET připojení k SSE");
   try {
     const server = createNewMcpServer();
     const transport = new SSEServerTransport("/message", res);
@@ -165,10 +150,13 @@ app.get("/sse", async (req, res) => {
   }
 });
 
+// Zde TypingMind posílá samotné příkazy
 app.post("/message", async (req, res) => {
+  console.log("📩 Zpráva na /message");
   const sessionId = req.query.sessionId;
   const transport = transports.get(sessionId);
   if (!transport) return res.status(404).send("Session nenalezena.");
+  
   await transport.handlePostMessage(req, res);
 });
 
