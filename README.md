@@ -2,7 +2,7 @@
 
 An [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server for [Resend API](https://resend.com).
 
-Lets AI agents (like TypingMind, Claude, etc.) send emails, manage templates, broadcasts, contacts, and more via Resend.
+Lets AI agents (like Typemind, Claude, etc.) send emails, manage templates, broadcasts, contacts, and more via Resend.
 
 ## Available Tools
 
@@ -64,37 +64,58 @@ mkdir resend-mcp-server && cd resend-mcp-server
 npm install
 
 # Set your API key
-set RESEND_API_KEY=re_xxx  # Windows
+set RESEND_API_KEY=re_xxx # Windows
 # or
-export RESEND_API_KEY=re_xxx  # macOS/Linux
+export RESEND_API_KEY=re_xxx # macOS/Linux
 
 # Run the server
 node resend-mcp-server.js
 ```
 
-## Connecting to TypingMind
+## Connecting to Typemind
+
+### Option 1: Local (stdio) — Recommended for local use
 
 1. Go to **Settings → MCP Servers → Add Server**
 2. Fill in:
-   | Field | Value |
-   |-------|-------|
-   | **Name** | `Resend Email API` |
-   | **Type** | `command` (nebo `stdio`) |
-   | **Command** | `node` |
-   | **Args** | `C:/cesta/k/resend-mcp-server.js` (full path) |
-   | **Env** | `RESEND_API_KEY=re_xxx` |
+
+| Field | Value |
+|-------|-------|
+| **Name** | `Resend Email API` |
+| **Type** | `command` (or `stdio`) |
+| **Command** | `node` |
+| **Args** | `/full/path/to/resend-mcp-server.js` |
+| **Env** | `RESEND_API_KEY=re_xxx` |
+
 3. Click **Save**
 
-Now your AI agent can use all Resend tools!
+### Option 2: Remote (Streamable HTTP) — For Railway/cloud deployment
 
-## Usage Examples
+1. Deploy to Railway (or any cloud provider)
+2. Make sure `PORT` environment variable is set (Railway sets it automatically)
+3. Set `RESEND_API_KEY` in Railway Variables
+4. Generate a public domain in Railway
+5. In Typemind, go to **Settings → MCP Servers → Add Server**
+6. Fill in:
 
-> "Send a welcome email to john@example.com"
-> "Create a new template called 'weekly-newsletter' with this HTML..."
-> "Show me all my email templates"
-> "Create a broadcast and send it to segment XYZ"
-> "List all contacts in my database"
-> "Add a new contact with email info@company.com"
+| Field | Value |
+|-------|-------|
+| **Name** | `Resend Email API` |
+| **Type** | `streamable-http` (or `url`) |
+| **URL** | `https://your-app.up.railway.app/mcp` |
+
+7. Click **Save**
+
+> ⚠️ **Important:** The endpoint is `/mcp` (NOT `/sse`). This server uses the new Streamable HTTP transport.
+
+### Health Check
+
+You can verify the server is running by visiting:
+```
+https://your-app.up.railway.app/health
+```
+Should return: `{"status":"ok","tools":26,"transport":"streamable-http"}`
 
 ## License
+
 MIT
